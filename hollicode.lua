@@ -8,6 +8,10 @@ local string_match = string.match
 local string_sub = string.sub
 local table_insert = table.insert
 local table_remove = table.remove
+local tonumber = tonumber
+local type = type
+
+local NIL_CONSTANT = {}
 
 -- Interpreter methods
 local interpreterPrototype = {}
@@ -71,7 +75,6 @@ do
 		elseif self.ip < 1 then
 			error("instruction pointer < 0")
 		end
-
 		local left, right = string_match(self.instructions[self.ip], "^(%w+)(.*)$")
 		if right ~= nil then
 			right = string_sub(right, 2)
@@ -84,6 +87,11 @@ do
 		end
 	end
 
+	-- User-facing version of `push`.
+	function interpreterPrototype:push(var)
+		self:_push(var)
+	end
+
 	--
 	-- VM methods
 	--
@@ -93,8 +101,9 @@ do
 		end)
 	end
 
-	function interpreterPrototype:_advance()
-		self.ip = self.ip + 1
+	function interpreterPrototype:_advance(distance)
+		local distance = distance or 1
+		self.ip = self.ip + distance
 	end
 
 	function interpreterPrototype:_push(value)
@@ -102,7 +111,16 @@ do
 	end
 
 	function interpreterPrototype:_pop()
-		return table_remove(self.stack)
+		local result = table_remove(self.stack)
+		if result == NIL_CONSTANT then
+			return nil
+		else
+			return result
+		end
+	end
+
+	function interpreterPrototype:_peek()
+		return self.stack[#self.stack]
 	end
 
 	function interpreterPrototype:_pushIP()
@@ -121,24 +139,102 @@ end
 -- 
 local operations = {}
 do
+	operations["RET"] = function(self)
+		self:_return()
+	end
+
+	operations["POP"] = function(self)
+		self:_advance()
+		self:_pop()
+	end
+
+	operations["JMP"] = function(self, distance)
+		local distance = tonumber(distance)
+		self:_advance(distance)
+	end
+
+	operations["FJMP"] = function(self, distance)
+		if not self:_peek() then
+			local distance = tonumber(distance)
+			self:_advance(distance)
+		end
+	end
+
+	operations["GOTO"] = function(self, ip)
+		local ip = tonumber(ip)
+		self:_pushIP()
+		-- Have to increment by one because Lua uses 1-indexed tables
+		self.ip = ip + 1
+	end
+
+	operations["NIL"] = function(self)
+		self:_advance()
+		-- We have to push a unique table because Lua doesn't take kindly to pushing
+		-- an actual `nil` to a table.
+		self:_push(NIL_CONSTANT)
+	end
+
+	operations["BOOL"] = function(self, bool)
+		self:_advance()
+		self:_push(bool == "true" and true or false)
+	end
+
+	operations["NUM"] = function(self, num)
+		self:_advance()
+		self:_push(tonumber(num))
+	end
+
 	operations["STR"] = function(self, str)
 		self:_advance()
 		self:_push(str)
 	end
 
-	operations["ECHO"] = function(self)
-		self:_advance()
-		local str = self:_pop()
-		print(str)
-	end
-
-	operations["FUNC"] = function(self, functionName)
+	operations["GETV"] = function(self, variableName)
 		self:_advance()
 		local originalStackSize = #self.stack
-		self:_emitRequest("function", functionName)
-		if #self.stack == originalStackSize then
-			error("requested a function '" .. functionName .. "' but got nothing")
+		if type(self.variables) == "table" then
+			local v = self.variables[variableName]
+			if v then
+				self:_push(v)
+			end
+		elseif type(self.variables) == "function" then
+			local v = self.variables(variableName)
+			if v then
+				self:_push(v)
+			end
 		end
+		if #self.stack == originalStackSize then
+			error("requested variable '" .. variableName .. "' but got nothing")
+		end
+	end
+
+	operations["GETF"] = function(self, functionName)
+		self:_advance()
+		local originalStackSize = #self.stack
+		if type(self.functions) == "table" then
+			local f = self.functions[functionName]
+			if f then
+				self:_push(f)
+			end
+		elseif type(self.functions) == "function" then
+			local f = self.functions(functionName)
+			if f then
+				self:_push(f)
+			end
+		end
+		if #self.stack == originalStackSize then
+			error("requested function '" .. functionName .. "' but got nothing")
+		end
+	end
+
+	operations["NOT"] = function(self)
+		self:_advance()
+		self.stack[#self.stack] = not self.stack[#self.stack]
+	end
+
+	operations["NEG"] = function(self)
+		self:_advance()
+		self.stack[#self.stack] = -self.stack[#self.stack]
 	end
 
 	operations["CALL"] = function(self, numArguments)
@@ -149,6 +245,43 @@ do
 			table_insert(arguments, self:_pop())
 		end
 		func(unpack(arguments))
+	end
+
+	operations["ADD"] = function(self)
+		self:_advance()
+		self:_push(self:_pop() + self:_pop())
+	end
+
+	operations["SUB"] = function(self)
+		self:_advance()
+		self:_push(self:_pop() - self:_pop())
+	end
+
+	operations["MULT"] = function(self)
+		self:_advance()
+		self:_push(self:_pop() * self:_pop())
+	end
+
+	operations["DIV"] = function(self)
+		self:_advance()
+		self:_push(self:_pop() / self:_pop())
+	end
+
+	operations["ECHO"] = function(self)
+		self:_advance()
+		local str = self:_pop()
+		print(str)
+	end
+
+	operations["OPT"] = function(self)
+		self:_advance()
+		print("SHOW OPTION")
+		self:_pop()
+	end
+
+	operations["WAIT"] = function(self)
+		self:_advance()
+		print("WAIT")
 	end
 end
 
@@ -162,6 +295,9 @@ function hollicode.new()
 	interpreter.traceback = {}
 	interpreter.stack = {}
 	interpreter.running = false
+
+	interpreter.functions = {}
+	interpreter.variables = {}
 
 	setmetatable(interpreter, {__index = interpreterPrototype})
 	setmetatable(interpreter.operations, {__index = operations})

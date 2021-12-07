@@ -1,8 +1,4 @@
-STR	Text text text
+BOOL true
 ECHO
-STR	Text text text
-ECHO
-FUNC	directive
-CALL	0
-STR	text after that
+NIL
 ECHO
