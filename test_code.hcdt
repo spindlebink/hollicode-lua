@@ -1,0 +1,8 @@
+STR	Text text text
+ECHO
+STR	Text text text
+ECHO
+FUNC	directive
+CALL	0
+STR	text after that
+ECHO
