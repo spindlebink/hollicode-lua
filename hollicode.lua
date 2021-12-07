@@ -76,6 +76,10 @@ do
 			error("instruction pointer < 0")
 		end
 		local left, right = string_match(self.instructions[self.ip], "^(%w+)(.*)$")
+		if left == nil then
+			self.running = false
+			return
+		end
 		if right ~= nil then
 			right = string_sub(right, 2)
 		end
@@ -83,13 +87,39 @@ do
 		if operation then
 			operation(self, right)
 		else
-			error("unrecognized bytecode command " .. left)
+			error("unrecognized bytecode command " .. tostring(left))
 		end
 	end
 
-	-- User-facing version of `push`.
-	function interpreterPrototype:push(var)
-		self:_push(var)
+	-- Selects option `index` from loaded options.
+	function interpreterPrototype:selectOption(index)
+		if self.running then
+			error("cannot select an option while the interpreter is running")
+		end
+		if index > 0 and index < #self.registeredOptions then
+			local option = self.registeredOptions[index]
+			self:_goto(option[2])
+			self:_clearOptions()
+		end
+	end
+
+	-- Selects an option from the loaded options and starts the interpreter.
+	function interpreterPrototype:selectOptionAndStart(index)
+		self:selectOption(index)
+		self:start()
+	end
+
+	-- Called when a `wait` command is received. Should be used to display loaded
+	-- options to the player and await input.
+	function interpreterPrototype:onWait()
+		print("Wait command received. Override to await player input and branch.")
+	end
+
+	-- Called when a line of text is pushed. Should be used to display narrative
+	-- text.
+	function interpreterPrototype:onText(text)
+		print("Text command received. Override to display text.")
+		print("Text: " .. tostring(text))
 	end
 
 	--
@@ -127,12 +157,22 @@ do
 		table_insert(self.traceback, self.ip)
 	end
 
+	function interpreterPrototype:_goto(instruction)
+		self:_pushIP()
+		-- Have to increment by one because Lua uses 1-indexed tables
+		self.ip = instruction + 1
+	end
+
 	function interpreterPrototype:_return()
 		if #self.traceback > 0 then
 			self.ip = table_remove(self.traceback) + 1
 		else
 			print("Warning: attempting to return with no traceback. Ignoring.")
 		end
+	end
+
+	function interpreterPrototype:_clearOptions()
+		self.registeredOptions = {}
 	end
 end
 
@@ -162,9 +202,7 @@ do
 
 	operations["GOTO"] = function(self, ip)
 		local ip = tonumber(ip)
-		self:_pushIP()
-		-- Have to increment by one because Lua uses 1-indexed tables
-		self.ip = ip + 1
+		self:_goto(ip)
 	end
 
 	operations["NIL"] = function(self)
@@ -270,18 +308,21 @@ do
 	operations["ECHO"] = function(self)
 		self:_advance()
 		local str = self:_pop()
-		print(str)
+		self:onText(str)
 	end
 
 	operations["OPT"] = function(self)
 		self:_advance()
-		print("SHOW OPTION")
-		self:_pop()
+		local optionName = self:_pop()
+		local optionIndex = #self.loadedOptions
+		local optionStart = self.ip + 1 -- skip JMP that follows OPT
+		table_insert(self.loadedOptions, {optionName, optionStart})
 	end
 
 	operations["WAIT"] = function(self)
 		self:_advance()
-		print("WAIT")
+		self.running = false
+		self:onWait()
 	end
 end
 
@@ -296,6 +337,7 @@ function hollicode.new()
 	interpreter.stack = {}
 	interpreter.running = false
 
+	interpreter.registeredOptions = {}
 	interpreter.functions = {}
 	interpreter.variables = {}
 
