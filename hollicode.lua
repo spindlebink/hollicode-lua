@@ -96,17 +96,22 @@ do
 		if self.running then
 			error("cannot select an option while the interpreter is running")
 		end
-		if index > 0 and index < #self.registeredOptions then
+		if index > 0 and index <= #self.registeredOptions then
+			self:onOptionSelected(index)
 			local option = self.registeredOptions[index]
-			self:_goto(option[2])
 			self:_clearOptions()
+			self:_goto(option[2])
 		end
 	end
 
 	-- Selects an option from the loaded options and starts the interpreter.
 	function interpreterPrototype:selectOptionAndStart(index)
-		self:selectOption(index)
-		self:start()
+		if self.running then
+			error("cannot select an option while the interpreter is running")
+		else
+			self:selectOption(index)
+			self:start()
+		end
 	end
 
 	-- Called when a `wait` command is received. Should be used to display loaded
@@ -120,6 +125,16 @@ do
 	function interpreterPrototype:onText(text)
 		print("Text command received. Override to display text.")
 		print("Text: " .. tostring(text))
+	end
+
+	-- Called when a new option is added.
+	function interpreterPrototype:onOption(optionIndex, optionText)
+	end
+
+	-- Called when an option is selected. Does not have a print message since
+	-- there's a good chance the user won't need to override it--option
+	-- selection is, after all, handled by the user.
+	function interpreterPrototype:onOptionSelected(index)
 	end
 
 	--
@@ -160,12 +175,12 @@ do
 	function interpreterPrototype:_goto(instruction)
 		self:_pushIP()
 		-- Have to increment by one because Lua uses 1-indexed tables
-		self.ip = instruction + 1
+		self.ip = instruction
 	end
 
 	function interpreterPrototype:_return()
 		if #self.traceback > 0 then
-			self.ip = table_remove(self.traceback) + 1
+			self.ip = table_remove(self.traceback)
 		else
 			print("Warning: attempting to return with no traceback. Ignoring.")
 		end
@@ -202,7 +217,7 @@ do
 
 	operations["GOTO"] = function(self, ip)
 		local ip = tonumber(ip)
-		self:_goto(ip)
+		self:_goto(ip + 1)
 	end
 
 	operations["NIL"] = function(self)
@@ -314,9 +329,9 @@ do
 	operations["OPT"] = function(self)
 		self:_advance()
 		local optionName = self:_pop()
-		local optionIndex = #self.loadedOptions
-		local optionStart = self.ip + 1 -- skip JMP that follows OPT
-		table_insert(self.loadedOptions, {optionName, optionStart})
+		local optionStart = self.ip
+		table_insert(self.registeredOptions, {optionName, optionStart + 1})
+		self:onOption(#self.registeredOptions, optionName)
 	end
 
 	operations["WAIT"] = function(self)
