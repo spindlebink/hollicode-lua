@@ -1,3 +1,29 @@
+-- hollicode.lua
+-- 
+-- Hollicode bytecode interpreter. For more info:
+-- * `https://github.com/spindlebink/hollicode`
+-- * `https://github.com/spindlebink/hollicode-lua`
+--
+-- Copyright © 2021-2022 Stanaforth (@spindlebink).
+--
+-- Permission is hereby granted, free of charge, to any person obtaining a copy
+-- of this software and associated documentation files (the “Software”), to deal
+-- in the Software without restriction, including without limitation the rights
+-- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- copies of the Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+--
+-- The above copyright notice and this permission notice shall be included in
+-- all copies or substantial portions of the Software.
+--
+-- THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-- SOFTWARE.
+
 local HollicodeInterpreter = {}
 
 local requirePath = (...):match("(.-)%hollicode")
@@ -23,8 +49,8 @@ local operators = {
 	["<="] = function(left, right) return left <= right end,
 	["=="] = function(left, right) return left == right end,
 	["!="] = function(left, right) return left ~= right end,
-	["&&"] = function(left, right) return left and right end,
-	["||"] = function(left, right) return left or right end,
+	["&&"] = function(left, right) return not not (left and right) end,
+	["||"] = function(left, right) return not not (left or right) end,
 	["+"] = function(left, right) return left + right end,
 	["-"] = function(left, right) return left - right end,
 	["/"] = function(left, right) return left / right end,
@@ -47,7 +73,7 @@ local instructionExecution = {
 	end,
 
 	["FJMP"] = function(self, amount)
-		if not self:_peek() then
+		if self:_peek() == NIL_CONSTANT or not self:_peek() then
 			self:_advance(amount)
 		else
 			self:_advance()
@@ -80,9 +106,6 @@ local instructionExecution = {
 	end,
 
 	["GETV"] = function(self, name)
-		if self.callbacks.getVariable then
-			self.callbacks.getVariable(name)
-		end
 		if self.variables[name] == nil then
 			self:_push(NIL_CONSTANT)
 		else
@@ -99,7 +122,11 @@ local instructionExecution = {
 	end,
 
 	["NOT"] = function(self)
-		self._stack[#self._stack] = not self._stack[#self._stack]
+		if self._stack[#self._stack] == NIL_CONSTANT then
+			self._stack[#self._stack] = true
+		else
+			self._stack[#self._stack] = not self._stack[#self._stack]
+		end
 		self:_advance()
 	end,
 
@@ -111,7 +138,8 @@ local instructionExecution = {
 	["BOP"] = function(self, op)
 		local left = self:_pop()
 		local right = self:_pop()
-		self:_push(operators[op](left, right))
+		local val = operators[op](left, right)
+		self:_push(val)
 		self:_advance()
 	end,
 
@@ -133,6 +161,7 @@ local instructionExecution = {
 				error("interpreter could not call method. Ensure that you have implemented either `callbacks.functionCall` or provided a valid function handle.")
 			end
 		end
+		self:_advance()
 	end,
 
 	["ECHO"] = function(self)
@@ -222,7 +251,9 @@ function HollicodeInterpreter:loadFile(filename, mode)
 			local left, right = instruction:match("^(%w+)(.*)$")
 			if right ~= nil then
 				-- skip delimiter & replace escapes
-				-- FIXME: doesn't support UTF escape codes
+				-- FIXME: escape substitution needs serious improvement. May implement
+				-- in compiler, since this is a non-trivial problem for interpreters to
+				-- solve, especially given special character escape codes, etc.
 				right = right:sub(2):gsub("(\\?)(.)", function(escape, str)
 					if escape ~= "\\" then
 						return str
@@ -247,6 +278,14 @@ function HollicodeInterpreter:loadFile(filename, mode)
 
 	if not supportedBytecodeVersions[self._bytecodeHeader.bytecodeVersion] then
 		print("Warning: interpreter may not support file " .. filename .. " as it uses a bytecode version (" .. self._bytecodeHeader.bytecodeVersion .. ") that has not been marked as compatible")
+	end
+end
+
+function HollicodeInterpreter:push(value)
+	if value == nil then
+		self:_push(NIL_CONSTANT)
+	else
+		self:_push(value)
 	end
 end
 
@@ -292,7 +331,6 @@ function HollicodeInterpreter:_executeNextInstruction()
 		argument = instruction[2]
 	end
 	if instructionExecution[instructionName] then
-		-- print(instructionName)
 		instructionExecution[instructionName](self, argument)
 	else
 		error("unrecognized instruction '" .. instructionName .. "'")
@@ -333,7 +371,15 @@ end
 
 -- Pops the top value off the stack and returns it.
 function HollicodeInterpreter:_pop()
-	return table_remove(self._stack)
+	local v = table_remove(self._stack)
+	if v == NIL_CONSTANT then
+		return nil
+	elseif v ~= nil then
+		return v
+	else
+		print("Warning: attempt to pop from empty stack")
+		return nil
+	end
 end
 
 -- Pushes a value onto the top of the stack.
@@ -344,6 +390,17 @@ end
 -- Pushes the current IP to the traceback stack.
 function HollicodeInterpreter:_pushTraceback()
 	table_insert(self._traceback, self._ip)
+end
+
+-- Prints the current stack.
+function HollicodeInterpreter:_printStack()
+	for i = #self._stack, 1, -1 do
+		if self._stack[i] == NIL_CONSTANT then
+			print("[nil literal]")
+		else
+			print(tostring(self._stack[i]))
+		end
+	end
 end
 
 -- Advances the IP by `amount` or 1.
