@@ -6,6 +6,10 @@ This interpreter is meant to serve as a reference implementation. It implements 
 
 Included in this repository is a basic LÖVE-based visual runner for Hollicode scripts. It can be used as a jumping-off point for integrating the interpreter in your projects if you want. The example program (and accompanying Hollicode script) isn't super sophisticated by any means, but it's a real-world example of running bytecode and getting its results.
 
+Per the Hollicode repo, **two warnings:**
+* **Hollicode (and this interpreter) is in an early state.** Stuff is going to change before version 1.0.
+* **I'm working on my own games.** I'll likely respond and help out if you've got questions or issues, but supporting other users in the use of this tool isn't my primary goal right now.
+
 ## Usage
 
 The library you'll use for your own projects can be found at `lib/hollicode.lua`. It's my working Hollicode bytecode interpreter.
