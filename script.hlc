@@ -1,4 +1,4 @@
-This is a Hollicode script testing environment. You can edit the script in `script.hlc`, then recompile it via the Hollicode compiler into `script.hlcj`, then reload the LÖVE project.
+This is a Hollicode script testing environment. You can edit the script in `script.hlc`, then recompile it via the Hollicode compiler into `script.json`, then reload the LÖVE project.
 
 > Top-level options
 

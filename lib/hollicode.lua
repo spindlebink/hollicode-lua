@@ -213,7 +213,7 @@ end
 function HollicodeInterpreter:loadFile(filename, mode)
 	if not mode then
 		mode =
-			filename:sub(-4) == "hlcj" and "json" or
+			filename:sub(-4) == "json" and "json" or
 			filename:sub(-4) == "hlct" and "text" or
 			error("unrecognized file type on '" .. filename .. "'")
 	end

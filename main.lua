@@ -40,7 +40,7 @@ local colors = {
 -- Loads the interpreter object & Hollicode script file.
 local function loadInterpreter()
 	interpreter = HollicodeInterpreter:new()
-	interpreter:loadFile("script.hlcj")
+	interpreter:loadFile("script.json")
 
 	-- Provide a `set` method that can be called from Hollicode by adding a new
 	-- entry into `variables`.
